@@ -33,9 +33,9 @@ after\_kansoku.exeではMIN2,seeing\_allframeの実行も行います。
 
 **E:.**
 
-└─observation\_result
+└─observed\_result
 
-&#x20;   │  observation\_envioment.txt
+&#x20;   │  environ\_yy-mm-dd-tt.txt
 
 &#x20;   │  weather\_results.db
 

@@ -1,5 +1,5 @@
-defult_pic_path=""
-defult_save_path=""
-current_pic_path=""
-current_save_path=""
-enviroment_path=""
+defult_pic_path=
+defult_save_path=
+current_pic_path=
+current_save_path=
+enviroment_path=
