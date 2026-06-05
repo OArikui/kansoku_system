@@ -8,10 +8,9 @@ from picture_analysis import get_cam_status ,min2 ,get_west_direction ,get_size
 
 def get_pic_info(pic_path):
     cam_status = get_cam_status(pic_path)#これは辞書型
-    min2_value = min2(pic_path)
+    min2_status = min2(pic_path)
     west_direction = get_west_direction(pic_path)
-    size = get_size(pic_path)
-    return list(cam_status.values()) + [min2_value, west_direction, size]
+    return list(cam_status.values()) + list(min2_status.values()) + [west_direction]
 
 if __name__ == "__main__":
     setting={i.split("=")[0] : i.split("=")[1] for i in open(__file__.replace("edit_database.py","setting.txt"),mode="r",encoding="UTF-8").read().split("\n")}
