@@ -1,5 +1,6 @@
 import time
 import matplotlib.pyplot as plt
+import matplotlib.collections 
 import numpy as np
 from pathlib import Path
 import os
@@ -8,17 +9,14 @@ import time
 import cv2
 import numpy as np
 import zwoasi as asi
-lib = str(Path(__file__).resolve().parents[1])+"\\lib"
-print(lib)
-if lib not in sys.path:
-    sys.path.append(lib)
-from MIN2_ver1 import MIN2_ignore_sunspots as MIN2  # pyright: ignore[reportMissingImports]
+from collections import deque
+from ..lib.MIN2_ver1 import MIN2_ignore_sunspots as MIN2  # pyright: ignore[reportMissingImports]
 # ==========================================
 # 1. SDKの初期化
 # ==========================================
 # 環境に合わせてASICamera2のライブラリパスを指定してください
 # ここではカレントディレクトリに配置している前提です
-env_filename = lib + "\\ASICamera2.dll"  # Windowsの場合
+env_filename =  "..\\lib\\ASICamera2.dll"  # Windowsの場合
 if not os.path.exists(env_filename):
     print(f"エラー: {env_filename} が見つかりません。")
     print("ZWOのSDKからライブラリファイルをこのスクリプトと同じフォルダに配置してください。")
@@ -55,12 +53,34 @@ camera.start_video_capture()
 # ★追加：カメラから現在設定されている正確な解像度（幅、高さ、ビン、画像タイプ）を取得
 width, height, binning, img_type = camera.get_roi_format()
 
-print("リアルタイム処理を開始します。'q' キーで終了します。")
+#MIN2_retuen一時保存用
+buffer = deque(maxlen=500)
 
+
+#処理のおぷしょｎ
+plt_drow_waittime=0.05#グラフの描画にかかる時間,小さければfpsが上がるが、描画に不具合の可能性
 # ==========================================
 # 3. リアルタイム処理ループ
 # ==========================================
 try:
+    print("roading...")
+    #リアルタイム描画用にaxを作成
+    plt.ion()
+    fig,ax = plt.subplot()
+    #一枚だけ取得
+    frame = camera.capture_video_frame(timeout=500)
+    img = np.frombuffer(frame, dtype=np.uint8).reshape(height, width)
+    (ax_img,)=ax.imshow(img,cv2.IMREAD_GRAYSCALE)#画像
+    circle = plt.Circle((0, 0), 0, fill=True, color='skyblue', linewidth=2)
+    (ax_min2,)=ax.add_patch(circle,label="けんしゅつed sun")#検出した太陽
+    (ax_shdw_c,)=ax.scatter([],[],color="cyan",s=3,alpha=0.4,label="きせき")#円の中心の軌跡(過去100こくらいを想定)
+    #$+alpha:後ろのデータほどalphaが小さくしたい
+    (ax_grid,) = ax.plot([0,width]*4,np.repeat([height/i for i in range(4)],2),c="red",linewigth=3,alpha=0.4)#横線のグリッド.回転誤差が許容値以内ならgreenにする$+task:グリッドを追加する関数はないのか
+    (ax_sunline,) = ax.plot([],[],color="purple",linewight=3)#太陽の移動直線,前5回分くらいのMIN2を参考に算出,回転誤差が許容値以内ならemeraldgreenにする
+    (fig_text,) = fig.text(0.01, 0.5, f'turn camera_{0}°', ha='right', fontsize=20, color='red')#画面上に出る、cameraの回転指示Left,rghitを_の後に入れる.回転誤差が許容値以内ならgreenにする
+    print("complete roading")
+
+    print("リアルタイム処理を開始します。'q' キーで終了します。")
     while True:
         try:
             frame = camera.capture_video_frame(timeout=500)
@@ -72,19 +92,10 @@ try:
 
         # ------------------------------------------
         # 【ここにリアルタイム処理を記述】
-        # 画像を1/2に縮小して表示しやすくする
-        img_resized = cv2.resize(img, (width // 2, height // 2))
-
-        # 例2：カラーカメラ（Bayer配列）の場合のカラーデモザイク処理
-        # ※モノクロカメラの場合は不要です。カメラのBayerパターンに合わせて変更してください。
-        # if camera_info['IsColorCam']:
-        #     img_color = cv2.cvtColor(img_resized, cv2.COLOR_BAYER_BG2BGR)
-        #     cv2.imshow('ASI Camera Live', img_color)
-        # else:
-        #     cv2.imshow('ASI Camera Live', img_resized)
-        # ------------------------------------------
-        # 画面に表示
-        cv2.imshow("ASI Camera Live", img_resized)
+        (cx,cy),r=MIN2(img)
+        buffer.append([cx,cy,r])
+        
+        #$+alpha:cv2.imshow("ASI Camera Live", img_resized) cv2のほうがwindowかっこいいです。こっちがいい...
 
         # 'q' キーが押されたらループを抜ける
         if cv2.waitKey(1) & 0xFF == ord("q"):
