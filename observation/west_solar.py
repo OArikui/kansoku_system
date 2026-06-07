@@ -1,22 +1,24 @@
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-
+from pathlib import Path
 import os
 import sys
 import time
 import cv2
 import numpy as np
 import zwoasi as asi
-
+lib = str(Path(__file__).resolve().parents[1])+"\\lib"
+print(lib)
+if lib not in sys.path:
+    sys.path.append(lib)
+from MIN2_ver1 import MIN2_ignore_sunspots as MIN2  # pyright: ignore[reportMissingImports]
 # ==========================================
 # 1. SDKの初期化
 # ==========================================
 # 環境に合わせてASICamera2のライブラリパスを指定してください
 # ここではカレントディレクトリに配置している前提です
-env_filename = ".//ASICamera2.dll"  # Windowsの場合
-# env_filename = './libASICamera2.so'  # Linuxの場合
-
+env_filename = lib + "\\ASICamera2.dll"  # Windowsの場合
 if not os.path.exists(env_filename):
     print(f"エラー: {env_filename} が見つかりません。")
     print("ZWOのSDKからライブラリファイルをこのスクリプトと同じフォルダに配置してください。")
