@@ -72,8 +72,8 @@ try:
     img = np.frombuffer(frame, dtype=np.uint8).reshape(height, width)
     (ax_img,)=ax.imshow(img,cv2.IMREAD_GRAYSCALE)#画像
     circle = plt.Circle((0, 0), 0, fill=True, color='skyblue', linewidth=2)
-    (ax_min2,)=ax.add_patch(circle,label="けんしゅつed sun")#検出した太陽
-    (ax_shdw_c,)=ax.scatter([],[],color="cyan",s=3,alpha=0.4,label="きせき")#円の中心の軌跡(過去100こくらいを想定)
+    (ax_min2,)=ax.add_patch(circle,label="けんしゅつed sun")#検出した太陽$+taskひらがなを英語に
+    (ax_shdw_c,)=ax.scatter(buffer[:][0],buffer[:][1],color="cyan",s=3,alpha=0.4,label="きせき")#円の中心の軌跡(過去100こくらいを想定)
     #$+alpha:後ろのデータほどalphaが小さくしたい
     (ax_grid,) = ax.plot([0,width]*4,np.repeat([height/i for i in range(4)],2),c="red",linewigth=3,alpha=0.4)#横線のグリッド.回転誤差が許容値以内ならgreenにする$+task:グリッドを追加する関数はないのか
     (ax_sunline,) = ax.plot([],[],color="purple",linewight=3)#太陽の移動直線,前5回分くらいのMIN2を参考に算出,回転誤差が許容値以内ならemeraldgreenにする
@@ -93,8 +93,13 @@ try:
         # ------------------------------------------
         # 【ここにリアルタイム処理を記述】
         (cx,cy),r=MIN2(img)
-        buffer.append([cx,cy,r])
-        
+        buffer.append([cx,cy])
+
+        #pltのデータ更新
+        ax_img.set_data(img)
+        ax_min2.set_data(plt.Circle((cx, cy), r, fill=True, color='skyblue', linewidth=2))
+        ax_shdw_c.set_xdata(buffer[-1:-100:-1][0])
+        ax_shdw_c.set_ydata(buffer[-1:-100:-1][1])
         #$+alpha:cv2.imshow("ASI Camera Live", img_resized) cv2のほうがwindowかっこいいです。こっちがいい...
 
         # 'q' キーが押されたらループを抜ける
