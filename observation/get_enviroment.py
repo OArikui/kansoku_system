@@ -40,6 +40,9 @@ class WeatherObservationApp:
         self.latest_hum = []
         self.latest_press = []
         
+        # 累計件数を記憶する変数
+        self.total_saved_count = 0
+        
         # --- GUIの構築 ---
         self._build_gui()
         self._init_db()
@@ -72,7 +75,7 @@ class WeatherObservationApp:
         self.status_label = ttk.Label(btn_frame, text="ステータス: 待機中", foreground="blue")
         self.status_label.pack(side=tk.LEFT, padx=20)
 
-        # 2. グラフパネル（下部）
+        # 2. グラフパネル（中央部）
         graph_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ (最新1秒間 / 128サンプリング)", padding=5)
         graph_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
@@ -86,6 +89,25 @@ class WeatherObservationApp:
         # TkinterのキャンバスにMatplotlibを埋め込む
         self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # 3. ステータスバー用のフレームを最下部に配置 (ここで追加)
+        status_frame = ttk.Frame(self.root)
+        status_frame.pack(fill="x", side="bottom", padx=10, pady=5)
+
+        # ① 擬似アクセスランプ（小さなキャンバスで円を描く）
+        # root.cget("bg") ではなく self.root.cget("bg") を使用
+        self.lamp_canvas = tk.Canvas(status_frame, width=16, height=16, bg=self.root.cget("bg"), bd=0, highlightthickness=0)
+        self.lamp_canvas.pack(side="left", padx=5)
+        # 灰色の円（消灯状態）を配置
+        self.lamp = self.lamp_canvas.create_oval(2, 2, 14, 14, fill="gray", outline="")
+
+        # ② ステータスラベル（最新の保存ログを表示）
+        self.log_label = ttk.Label(status_frame, text="観測データ収集 待機中...", anchor="w")
+        self.log_label.pack(side="left", fill="x", expand=True, padx=5)
+
+        # ③ 総保存件数カウンター
+        self.counter_label = ttk.Label(status_frame, text=f"総保存件数: {self.total_saved_count} 件")
+        self.counter_label.pack(side="right", padx=5)
 
     def browse_file(self):
         """保存場所をダイアログで選択"""
@@ -122,12 +144,11 @@ class WeatherObservationApp:
         # センサー初期化とチャネル選択
         if gdx_available:
             try:
-                # GUIで入力された "1, 2, 3" のような文字列を数値のリストに変換
                 ch_list = [int(c.strip()) for c in self.channels.get().split(',')]
                 self.device = gdx.gdx()
                 self.device.open(connection='usb')
-                self.device.select_sensors(ch_list)  # ここでGUIの設定を適用
-                self.device.start(period=8)  # 128Hz (約8ms)
+                self.device.select_sensors(ch_list)
+                self.device.start(period=8)
             except Exception as e:
                 messagebox.showwarning("センサー警告", f"センサーの初期化に失敗しました。デモモード（模擬データ）で動作します。\n詳細: {e}")
                 self.device = None
@@ -139,8 +160,9 @@ class WeatherObservationApp:
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.status_label.config(text="ステータス: 観測中 (128Hz)", foreground="red")
+        self.log_label.config(text="観測を開始しました。データの保存を待機しています...")
         
-        # 観測ループを「別スレッド」で開始（画面をフリーズさせないため）
+        # 観測ループを「別スレッド」で開始
         self.observation_thread = threading.Thread(target=self.observation_loop, daemon=True)
         self.observation_thread.start()
         
@@ -162,6 +184,7 @@ class WeatherObservationApp:
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
+        self.log_label.config(text="観測を停止しました。")
 
     def observation_loop(self):
         """1秒ごとにデータを集めてDBに保存するループ（裏側のスレッドで動作）"""
@@ -170,7 +193,7 @@ class WeatherObservationApp:
             self.save_to_db(start_time, wind, hum, press)
             
             # グラフ描画用に、最新の1秒分のデータをクラス変数にコピー
-            self.latest_time = list(range(self.sampling_rate)) # X軸は0〜127のサンプル番号
+            self.latest_time = list(range(self.sampling_rate))
             self.latest_wind = wind
             self.latest_hum = hum
             self.latest_press = press
@@ -220,6 +243,25 @@ class WeatherObservationApp:
         df.to_sql('weather_samples', con=conn, if_exists='append', index=False)
         conn.close()
 
+        # --- アクセスランプと件数カウンターの更新処理 ---
+        self.total_saved_count += self.sampling_rate
+        
+        # UIの更新はメインスレッドで行う必要があるため after を使用
+        self.root.after(0, self._update_status_bar)
+
+    def _update_status_bar(self):
+        """ステータスバーの表示を更新（メインスレッドで実行される）"""
+        # ランプを明るい緑色（点灯）にする
+        self.lamp_canvas.itemconfig(self.lamp, fill="lime green")
+        
+        # ログとカウンターを更新
+        now_str = datetime.datetime.now().strftime("%H:%M:%S")
+        self.log_label.config(text=f"[{now_str}] DBへ {self.sampling_rate} 件のデータを保存しました")
+        self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
+        
+        # 150ミリ秒後にランプを灰色（消灯）に戻す
+        self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
+
     def update_graph(self):
         """1秒おきにグラフを再描画する（表側のメインスレッドで動作）"""
         if not self.is_observing:
@@ -244,6 +286,7 @@ class WeatherObservationApp:
             
         # 1000ミリ秒（1秒）後に自分自身をもう一度呼び出す
         self.root.after(1000, self.update_graph)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
