@@ -23,7 +23,7 @@ class WeatherObservationApp:
     def __init__(self, root):
         self.root = root
         self.root.title("天体観測 気象データ収集システム")
-        self.root.geometry("850x800") # レイアウト拡張のためサイズ調整
+        self.root.geometry("850x800")
         
         # --- システム変数 ---
         self.db_path = tk.StringVar(value="solar_observation.db")
@@ -36,62 +36,63 @@ class WeatherObservationApp:
         self.device = None
         
         # チャンネル管理用変数
-        self.ch_vars = {}     # { ch_num: BooleanVar }
-        self.ch_info_map = {} # { ch_num: "1 - Wind Speed (m/s)" }
+        self.ch_vars = {}     
+        self.ch_info_map = {} 
         self.selected_channels = []
         
-        # 内部計算用変数
         self.sampling_rate = 128
         self.interval = 1.0 / self.sampling_rate
         
-        # グラフ描画用のデータバッファ
         self.latest_time = []
-        self.latest_buffers = {} # { ch_num: [data_list] }
+        self.latest_buffers = {}
         self.total_saved_count = 0
         
-        # --- GUIの構築 ---
+        # GUI構築
         self._build_gui()
-        
-        # 初期状態としてデモ用のチャンネル候補を表示しておく
         self.setup_initial_channels()
         self._init_db()
 
+    # --- 【ここが不足していました】追加分 ---
+    def browse_file(self):
+        """データベースの保存場所を選択"""
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".db",
+            filetypes=[("SQLite Database", "*.db"), ("All Files", "*.*")],
+            title="データベースの保存先を選択"
+        )
+        if filepath:
+            self.db_path.set(filepath)
+    # ----------------------------------------
+
     def _build_gui(self):
-        # 1. コントロールパネル（上部）
+        # (前回のUI構築コードと同じ内容です)
         control_frame = ttk.LabelFrame(self.root, text="観測設定・コントロール", padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # 1-1. 保存場所の設定
         ttk.Label(control_frame, text="保存先 DB:").grid(row=0, column=0, sticky=tk.W, pady=2)
         ttk.Entry(control_frame, textvariable=self.db_path, width=35).grid(row=0, column=1, sticky=tk.W, padx=5)
         ttk.Button(control_frame, text="参照...", command=self.browse_file).grid(row=0, column=2, sticky=tk.W, padx=5)
         
-        # 1-2. テーブル名の設定
         ttk.Label(control_frame, text="テーブル名:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.entry_table = ttk.Entry(control_frame, textvariable=self.table_name, width=35)
         self.entry_table.grid(row=1, column=1, sticky=tk.W, padx=5)
         self.btn_switch_table = ttk.Button(control_frame, text="切替 / 新規作成", command=self.switch_table)
         self.btn_switch_table.grid(row=1, column=2, sticky=tk.W, padx=5)
         
-        # 1-3. 【機能追加】観測デバイスの指定と接続確認ボタン
         ttk.Label(control_frame, text="接続デバイスID:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.entry_device = ttk.Entry(control_frame, textvariable=self.device_setting, width=35)
         self.entry_device.grid(row=2, column=1, sticky=tk.W, padx=5)
         self.btn_connect = ttk.Button(control_frame, text="接続 & チャネル取得", command=self.connect_device)
         self.btn_connect.grid(row=2, column=2, sticky=tk.W, padx=5)
-        ttk.Label(control_frame, text="※空欄で自動検出").grid(row=2, column=3, sticky=tk.W)
         
-        # 1-4. サンプリング周波数の設定
         ttk.Label(control_frame, text="サンプリング周波数:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.combo_rate = ttk.Combobox(control_frame, textvariable=self.sampling_rate_var, values=["1 Hz", "10 Hz", "50 Hz", "100 Hz", "128 Hz"], width=15, state="readonly")
         self.combo_rate.grid(row=3, column=1, sticky=tk.W, padx=5)
         
-        # 1-5. 【機能追加】動的センサーチャネル配置用の親フレーム
         ttk.Label(control_frame, text="使用チャネル:").grid(row=4, column=0, sticky=tk.NW, pady=5)
         self.ch_frame = ttk.Frame(control_frame)
         self.ch_frame.grid(row=4, column=1, columnspan=3, sticky=tk.W, padx=5, pady=5)
         
-        # 1-6. 操作ボタン
         btn_frame = ttk.Frame(control_frame)
         btn_frame.grid(row=5, column=0, columnspan=4, pady=10)
         
@@ -104,33 +105,26 @@ class WeatherObservationApp:
         self.status_label = ttk.Label(btn_frame, text="ステータス: 待機中", foreground="blue")
         self.status_label.pack(side=tk.LEFT, padx=20)
 
-        # 2. グラフパネル
-        self.graph_label_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ (最新1秒間)", padding=5)
+        # グラフとステータスバーの設定は省略（前回のコードと同じです）
+        self.graph_label_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ", padding=5)
         self.graph_label_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
         self.fig = Figure(figsize=(8, 4.5), dpi=100)
         self.ax1 = self.fig.add_subplot(311)
         self.ax2 = self.fig.add_subplot(312)
         self.ax3 = self.fig.add_subplot(313)
         self.fig.tight_layout(pad=2.5)
-        
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_label_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # 3. ステータスバー
         status_frame = ttk.Frame(self.root)
         status_frame.pack(fill="x", side="bottom", padx=10, pady=5)
-
         self.lamp_canvas = tk.Canvas(status_frame, width=16, height=16, bg=self.root.cget("bg"), bd=0, highlightthickness=0)
         self.lamp_canvas.pack(side="left", padx=5)
         self.lamp = self.lamp_canvas.create_oval(2, 2, 14, 14, fill="gray", outline="")
-
-        self.log_label = ttk.Label(status_frame, text="システム起動完了", anchor="w")
+        self.log_label = ttk.Label(status_frame, text="準備完了", anchor="w")
         self.log_label.pack(side="left", fill="x", expand=True, padx=5)
-
         self.counter_label = ttk.Label(status_frame, text=f"総保存件数: {self.total_saved_count} 件")
         self.counter_label.pack(side="right", padx=5)
-
         self.device_label = ttk.Label(status_frame, text="デバイス: 未接続", foreground="darkorange", font=("", 9, "bold"))
         self.device_label.pack(side="right", padx=15)
 
