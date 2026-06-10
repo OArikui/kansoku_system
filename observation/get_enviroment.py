@@ -26,6 +26,7 @@ class WeatherObservationApp:
         
         # --- システム変数 ---
         self.db_path = tk.StringVar(value="solar_observation.db")
+        self.table_name = tk.StringVar(value="weather_samples") # テーブル名を変数化
         self.channels = tk.StringVar(value="1, 2, 3")  # デフォルトのセンサーチャネル
         self.is_observing = False
         self.observation_thread = None
@@ -53,18 +54,25 @@ class WeatherObservationApp:
         control_frame.pack(fill=tk.X, padx=10, pady=5)
         
         # 1-1. 保存場所の設定
-        ttk.Label(control_frame, text="保存先 DB:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(control_frame, textvariable=self.db_path, width=50).grid(row=0, column=1, padx=5)
-        ttk.Button(control_frame, text="参照...", command=self.browse_file).grid(row=0, column=2)
+        ttk.Label(control_frame, text="保存先 DB:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(control_frame, textvariable=self.db_path, width=45).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Button(control_frame, text="参照...", command=self.browse_file).grid(row=0, column=2, sticky=tk.W)
         
-        # 1-2. センサーチャネルの選択
-        ttk.Label(control_frame, text="使用チャネル (カンマ区切り):").grid(row=1, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(control_frame, textvariable=self.channels, width=20).grid(row=1, column=1, sticky=tk.W, padx=5)
-        ttk.Label(control_frame, text="※Vernierの仕様に合わせて入力 (例: 風速,湿度,気圧)").grid(row=1, column=1, sticky=tk.E)
+        # 1-2. テーブル名の設定（クイック切替機能）
+        ttk.Label(control_frame, text="テーブル名:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.entry_table = ttk.Entry(control_frame, textvariable=self.table_name, width=30)
+        self.entry_table.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.btn_switch_table = ttk.Button(control_frame, text="切替 / 新規作成", command=self.switch_table)
+        self.btn_switch_table.grid(row=1, column=2, sticky=tk.W)
         
-        # 1-3. 操作ボタン
+        # 1-3. センサーチャネルの選択
+        ttk.Label(control_frame, text="使用チャネル:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(control_frame, textvariable=self.channels, width=20).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Label(control_frame, text="※例: 1, 2, 3 (風速,湿度,気圧)").grid(row=2, column=1, sticky=tk.E)
+        
+        # 1-4. 操作ボタン
         btn_frame = ttk.Frame(control_frame)
-        btn_frame.grid(row=2, column=0, columnspan=3, pady=10)
+        btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
         
         self.btn_start = ttk.Button(btn_frame, text="▶ 観測開始", command=self.start_observation, width=15)
         self.btn_start.pack(side=tk.LEFT, padx=10)
@@ -90,18 +98,16 @@ class WeatherObservationApp:
         self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # 3. ステータスバー用のフレームを最下部に配置 (ここで追加)
+        # 3. ステータスバー用のフレームを最下部に配置
         status_frame = ttk.Frame(self.root)
         status_frame.pack(fill="x", side="bottom", padx=10, pady=5)
 
-        # ① 擬似アクセスランプ（小さなキャンバスで円を描く）
-        # root.cget("bg") ではなく self.root.cget("bg") を使用
+        # ① 擬似アクセスランプ
         self.lamp_canvas = tk.Canvas(status_frame, width=16, height=16, bg=self.root.cget("bg"), bd=0, highlightthickness=0)
         self.lamp_canvas.pack(side="left", padx=5)
-        # 灰色の円（消灯状態）を配置
         self.lamp = self.lamp_canvas.create_oval(2, 2, 14, 14, fill="gray", outline="")
 
-        # ② ステータスラベル（最新の保存ログを表示）
+        # ② ステータスラベル
         self.log_label = ttk.Label(status_frame, text="観測データ収集 待機中...", anchor="w")
         self.log_label.pack(side="left", fill="x", expand=True, padx=5)
 
@@ -118,14 +124,22 @@ class WeatherObservationApp:
         )
         if filepath:
             self.db_path.set(filepath)
-            self._init_db() # 保存先が変わったのでテーブルを初期化
+            self._init_db()
 
-    def _init_db(self):
+    def _init_db(self, target_table=None):
         """データベースとテーブルの初期化"""
+        if target_table is None:
+            target_table = self.table_name.get().strip()
+            
+        if not target_table:
+            target_table = "weather_samples"
+            self.table_name.set(target_table)
+
         conn = sqlite3.connect(self.db_path.get())
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS weather_samples (
+        # 動的にテーブル名を指定して作成
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {target_table} (
                 sample_time TEXT PRIMARY KEY,
                 wind_speed REAL,
                 humidity REAL,
@@ -135,10 +149,32 @@ class WeatherObservationApp:
         conn.commit()
         conn.close()
 
+    def switch_table(self):
+        """テーブルを切り替えて件数をリセットする"""
+        if self.is_observing:
+            messagebox.showwarning("警告", "観測中はテーブルの変更ができません。先に観測を停止してください。")
+            return
+            
+        new_table = self.table_name.get().strip()
+        if not new_table:
+            messagebox.showwarning("警告", "テーブル名を入力してください。")
+            return
+            
+        # データベースに新しいテーブルを作成（または既存を確認）
+        try:
+            self._init_db(new_table)
+            # カウンターをリセットしてUIに反映
+            self.total_saved_count = 0
+            self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
+            self.log_label.config(text=f"保存先テーブルを '{new_table}' に切り替えました。")
+        except Exception as e:
+            messagebox.showerror("エラー", f"テーブルの作成/切り替えに失敗しました。\n{e}")
+
     def start_observation(self):
         """観測の開始（別スレッドで裏側で動かす）"""
         if self.is_observing: return
         
+        # 開始直前に念のためテーブルを確認
         self._init_db()
         
         # センサー初期化とチャネル選択
@@ -155,12 +191,15 @@ class WeatherObservationApp:
         else:
             self.device = None
             
-        # UIの表示切り替え
+        # UIの表示切り替え（テーブル名変更をロック）
         self.is_observing = True
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
+        self.entry_table.config(state=tk.DISABLED)
+        self.btn_switch_table.config(state=tk.DISABLED)
+        
         self.status_label.config(text="ステータス: 観測中 (128Hz)", foreground="red")
-        self.log_label.config(text="観測を開始しました。データの保存を待機しています...")
+        self.log_label.config(text=f"テーブル '{self.table_name.get()}' に保存を開始しました...")
         
         # 観測ループを「別スレッド」で開始
         self.observation_thread = threading.Thread(target=self.observation_loop, daemon=True)
@@ -181,8 +220,12 @@ class WeatherObservationApp:
                 pass
             self.device = None
             
+        # UIのロック解除
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
+        self.entry_table.config(state=tk.NORMAL)
+        self.btn_switch_table.config(state=tk.NORMAL)
+        
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
         self.log_label.config(text="観測を停止しました。")
 
@@ -239,8 +282,11 @@ class WeatherObservationApp:
         })
         df['sample_time'] = df['sample_time'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
         
+        # 動的に設定されたテーブル名に保存する
+        current_table = self.table_name.get().strip()
+        
         conn = sqlite3.connect(self.db_path.get())
-        df.to_sql('weather_samples', con=conn, if_exists='append', index=False)
+        df.to_sql(current_table, con=conn, if_exists='append', index=False)
         conn.close()
 
         # --- アクセスランプと件数カウンターの更新処理 ---
@@ -251,15 +297,12 @@ class WeatherObservationApp:
 
     def _update_status_bar(self):
         """ステータスバーの表示を更新（メインスレッドで実行される）"""
-        # ランプを明るい緑色（点灯）にする
         self.lamp_canvas.itemconfig(self.lamp, fill="lime green")
         
-        # ログとカウンターを更新
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log_label.config(text=f"[{now_str}] DBへ {self.sampling_rate} 件のデータを保存しました")
+        self.log_label.config(text=f"[{now_str}] テーブル '{self.table_name.get()}' へ {self.sampling_rate} 件保存しました")
         self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
         
-        # 150ミリ秒後にランプを灰色（消灯）に戻す
         self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
 
     def update_graph(self):
@@ -267,7 +310,6 @@ class WeatherObservationApp:
         if not self.is_observing:
             return
             
-        # 最新データが存在する場合のみ描画
         if self.latest_wind:
             self.ax1.clear()
             self.ax2.clear()
@@ -284,13 +326,11 @@ class WeatherObservationApp:
             
             self.canvas.draw()
             
-        # 1000ミリ秒（1秒）後に自分自身をもう一度呼び出す
         self.root.after(1000, self.update_graph)
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = WeatherObservationApp(root)
-    # ウィンドウを閉じた時に安全に終了させる処理
     root.protocol("WM_DELETE_WINDOW", lambda: (app.stop_observation(), root.destroy()))
     root.mainloop()
