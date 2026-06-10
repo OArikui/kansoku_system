@@ -21,18 +21,25 @@ except ImportError:
 class WeatherObservationApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("天体観測 気象データ収集システム (128Hzサンプリング)")
-        self.root.geometry("800x720") # 高さをわずかに調整
+        self.root.title("天体観測 気象データ収集システム")
+        self.root.geometry("820x780") # UI追加に伴いサイズを微調整
         
         # --- システム変数 ---
         self.db_path = tk.StringVar(value="solar_observation.db")
         self.table_name = tk.StringVar(value="weather_samples")
-        self.device_setting = tk.StringVar(value="")  # 【追加】デバイスID指定用の変数
-        self.channels = tk.StringVar(value="1, 2, 3")  # デフォルトのセンサーチャネル
+        self.device_setting = tk.StringVar(value="")
         self.is_observing = False
         self.observation_thread = None
         self.device = None
         
+        # 【追加】サンプリング周波数とチャンネル選択用の変数
+        self.sampling_rate_var = tk.StringVar(value="128 Hz")
+        self.ch1_var = tk.BooleanVar(value=True)  # Ch 1: 風速
+        self.ch2_var = tk.BooleanVar(value=True)  # Ch 2: 湿度
+        self.ch3_var = tk.BooleanVar(value=True)  # Ch 3: 気圧
+        self.ch4_var = tk.BooleanVar(value=False) # Ch 4: 気温
+        
+        # 内部計算用変数（デフォルト値）
         self.sampling_rate = 128
         self.interval = 1.0 / self.sampling_rate
         
@@ -56,30 +63,44 @@ class WeatherObservationApp:
         
         # 1-1. 保存場所の設定
         ttk.Label(control_frame, text="保存先 DB:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(control_frame, textvariable=self.db_path, width=45).grid(row=0, column=1, sticky=tk.W, padx=5)
-        ttk.Button(control_frame, text="参照...", command=self.browse_file).grid(row=0, column=2, sticky=tk.W)
+        ttk.Entry(control_frame, textvariable=self.db_path, width=45).grid(row=0, column=1, columnspan=2, sticky=tk.W, padx=5)
+        ttk.Button(control_frame, text="参照...", command=self.browse_file).grid(row=0, column=3, sticky=tk.W)
         
-        # 1-2. テーブル名の設定（クイック切替機能）
+        # 1-2. テーブル名の設定
         ttk.Label(control_frame, text="テーブル名:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.entry_table = ttk.Entry(control_frame, textvariable=self.table_name, width=30)
-        self.entry_table.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.entry_table.grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=5)
         self.btn_switch_table = ttk.Button(control_frame, text="切替 / 新規作成", command=self.switch_table)
-        self.btn_switch_table.grid(row=1, column=2, sticky=tk.W)
+        self.btn_switch_table.grid(row=1, column=3, sticky=tk.W)
         
-        # 1-3. 【追加】観測デバイスの指定
+        # 1-3. 観測デバイスの指定
         ttk.Label(control_frame, text="接続デバイスID:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.entry_device = ttk.Entry(control_frame, textvariable=self.device_setting, width=30)
-        self.entry_device.grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Label(control_frame, text="※空欄でUSB自動検出 (例: GDX-ACC 01100123)").grid(row=2, column=2, sticky=tk.W)
+        self.entry_device.grid(row=2, column=1, columnspan=2, sticky=tk.W, padx=5)
+        ttk.Label(control_frame, text="※空欄でUSB自動検出").grid(row=2, column=3, sticky=tk.W)
         
-        # 1-4. センサーチャネルの選択
-        ttk.Label(control_frame, text="使用チャネル:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(control_frame, textvariable=self.channels, width=20).grid(row=3, column=1, sticky=tk.W, padx=5)
-        ttk.Label(control_frame, text="※例: 1, 2, 3 (風速,湿度,気圧)").grid(row=3, column=2, sticky=tk.W)
+        # 1-4. 【追加】サンプリング周波数の設定
+        ttk.Label(control_frame, text="サンプリング周波数:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.combo_rate = ttk.Combobox(control_frame, textvariable=self.sampling_rate_var, values=["1 Hz", "10 Hz", "50 Hz", "100 Hz", "128 Hz"], width=12, state="readonly")
+        self.combo_rate.grid(row=3, column=1, sticky=tk.W, padx=5)
         
-        # 1-5. 操作ボタン
+        # 1-5. 【追加】センサーチャネルの選択（日本語/英語併記）
+        ttk.Label(control_frame, text="使用チャネル:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        self.ch_frame = ttk.Frame(control_frame)
+        self.ch_frame.grid(row=4, column=1, columnspan=3, sticky=tk.W, padx=5)
+        
+        self.cb_ch1 = ttk.Checkbutton(self.ch_frame, text="Ch 1: 風速 / Wind Speed", variable=self.ch1_var)
+        self.cb_ch1.pack(side=tk.LEFT, padx=5)
+        self.cb_ch2 = ttk.Checkbutton(self.ch_frame, text="Ch 2: 湿度 / Relative Humidity", variable=self.ch2_var)
+        self.cb_ch2.pack(side=tk.LEFT, padx=5)
+        self.cb_ch3 = ttk.Checkbutton(self.ch_frame, text="Ch 3: 気圧 / Barometric Pressure", variable=self.ch3_var)
+        self.cb_ch3.pack(side=tk.LEFT, padx=5)
+        self.cb_ch4 = ttk.Checkbutton(self.ch_frame, text="Ch 4: 気温 / Temperature", variable=self.ch4_var)
+        self.cb_ch4.pack(side=tk.LEFT, padx=5)
+        
+        # 1-6. 操作ボタン
         btn_frame = ttk.Frame(control_frame)
-        btn_frame.grid(row=4, column=0, columnspan=3, pady=10)
+        btn_frame.grid(row=5, column=0, columnspan=4, pady=10)
         
         self.btn_start = ttk.Button(btn_frame, text="▶ 観測開始", command=self.start_observation, width=15)
         self.btn_start.pack(side=tk.LEFT, padx=10)
@@ -91,38 +112,32 @@ class WeatherObservationApp:
         self.status_label.pack(side=tk.LEFT, padx=20)
 
         # 2. グラフパネル（中央部）
-        graph_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ (最新1秒間 / 128サンプリング)", padding=5)
-        graph_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.graph_label_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ (最新1秒間)", padding=5)
+        self.graph_label_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # MatplotlibのFigureを作成し、3つのサブプロット（行）を配置
-        self.fig = Figure(figsize=(8, 5), dpi=100)
+        self.fig = Figure(figsize=(8, 4.5), dpi=100)
         self.ax1 = self.fig.add_subplot(311)
         self.ax2 = self.fig.add_subplot(312)
         self.ax3 = self.fig.add_subplot(313)
         self.fig.tight_layout(pad=3.0)
         
-        # TkinterのキャンバスにMatplotlibを埋め込む
-        self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame if 'graph_frame' in locals() else self.graph_label_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         # 3. ステータスバー用のフレームを最下部に配置
         status_frame = ttk.Frame(self.root)
         status_frame.pack(fill="x", side="bottom", padx=10, pady=5)
 
-        # ① 擬似アクセスランプ
         self.lamp_canvas = tk.Canvas(status_frame, width=16, height=16, bg=self.root.cget("bg"), bd=0, highlightthickness=0)
         self.lamp_canvas.pack(side="left", padx=5)
         self.lamp = self.lamp_canvas.create_oval(2, 2, 14, 14, fill="gray", outline="")
 
-        # ② ステータスラベル
         self.log_label = ttk.Label(status_frame, text="観測データ収集 待機中...", anchor="w")
         self.log_label.pack(side="left", fill="x", expand=True, padx=5)
 
-        # ③ 総保存件数カウンター
         self.counter_label = ttk.Label(status_frame, text=f"総保存件数: {self.total_saved_count} 件")
         self.counter_label.pack(side="right", padx=5)
 
-        # ④ 【追加】使用デバイス表示ラベル
         self.device_label = ttk.Label(status_frame, text="デバイス: 未接続", foreground="darkorange", font=("", 9, "bold"))
         self.device_label.pack(side="right", padx=15)
 
@@ -162,7 +177,7 @@ class WeatherObservationApp:
     def switch_table(self):
         """テーブルを切り替えて件数をリセットする"""
         if self.is_observing:
-            messagebox.showwarning("警告", "観測中はテーブルの変更ができません。先に観測を停止してください。")
+            messagebox.showwarning("警告", "観測中はテーブルの変更ができません。")
             return
             
         new_table = self.table_name.get().strip()
@@ -179,58 +194,81 @@ class WeatherObservationApp:
             messagebox.showerror("エラー", f"テーブルの作成/切り替えに失敗しました。\n{e}")
 
     def start_observation(self):
-        """観測の開始（別スレッドで裏側で動かす）"""
+        """観測の開始"""
         if self.is_observing: return
         
+        # 【追加】選択されたチャンネルリストの構築
+        ch_list = []
+        if self.ch1_var.get(): ch_list.append(1)
+        if self.ch2_var.get(): ch_list.append(2)
+        if self.ch3_var.get(): ch_list.append(3)
+        if self.ch4_var.get(): ch_list.append(4)
+        
+        if not ch_list:
+            messagebox.showwarning("警告", "少なくとも1つのチャネルを選択してください。")
+            return
+
+        # 【追加】周波数の取得とインターバルの動的計算
+        try:
+            self.sampling_rate = int(self.sampling_rate_var.get().split()[0])
+            self.interval = 1.0 / self.sampling_rate
+        except Exception:
+            self.sampling_rate = 128
+            self.interval = 1.0 / 128
+
         self._init_db()
         disp_device_name = "未接続"
         
         # センサー初期化とチャネル選択
         if gdx_available:
             try:
-                ch_list = [int(c.strip()) for c in self.channels.get().split(',')]
                 self.device = gdx.gdx()
-                
-                # 【修正】デバイス指定の判定
                 target_device = self.device_setting.get().strip()
                 if target_device:
-                    # デバイスIDが指定されている場合
                     self.device.open(connection='usb', device_to_open=target_device)
                     disp_device_name = target_device
                 else:
-                    # 空欄の場合は自動検出
                     self.device.open(connection='usb')
                     disp_device_name = "USB自動検出デバイス"
                     
                 self.device.select_sensors(ch_list)
-                self.device.start(period=8)
+                
+                # サンプリングレートに合わせて周期（ミリ秒）を計算
+                period_ms = max(1, int(1000 / self.sampling_rate))
+                self.device.start(period=period_ms)
             except Exception as e:
-                messagebox.showwarning("センサー警告", f"センサーの初期化に失敗しました。デモモード（模擬データ）で動作します。\n詳細: {e}")
+                messagebox.showwarning("センサー警告", f"センサーの初期化に失敗しました。デモモードで動作します。\n詳細: {e}")
                 self.device = None
                 disp_device_name = "デモモード（模擬データ）"
         else:
             self.device = None
             disp_device_name = "デモモード（非サポート環境）"
             
-        # UIの表示切り替え（各種設定をロック）
+        # UIの表示切り替え（各種設定のロック）
         self.is_observing = True
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.entry_table.config(state=tk.DISABLED)
         self.btn_switch_table.config(state=tk.DISABLED)
-        self.entry_device.config(state=tk.DISABLED) # デバイス指定欄をロック
+        self.entry_device.config(state=tk.DISABLED)
+        self.combo_rate.config(state=tk.DISABLED) # 周波数コンボボックスをロック
         
-        self.status_label.config(text="ステータス: 観測中 (128Hz)", foreground="red")
+        # チャンネルチェックボックスのロック
+        self.cb_ch1.config(state=tk.DISABLED)
+        self.cb_ch2.config(state=tk.DISABLED)
+        self.cb_ch3.config(state=tk.DISABLED)
+        self.cb_ch4.config(state=tk.DISABLED)
+        
+        self.status_label.config(text=f"ステータス: 観測中 ({self.sampling_rate}Hz)", foreground="red")
+        self.graph_label_frame.config(text=f"リアルタイム観測データ (最新1秒間 / {self.sampling_rate}サンプリング)")
         self.log_label.config(text=f"テーブル '{self.table_name.get()}' に保存を開始しました...")
-        
-        # 【追加】ステータスバーに現在のデバイス名を表示
         self.device_label.config(text=f"デバイス: {disp_device_name}", foreground="green")
         
-        # 観測ループを「別スレッド」で開始
+        # 観測ループを別スレッドで開始
         self.observation_thread = threading.Thread(target=self.observation_loop, daemon=True)
         self.observation_thread.start()
         
-        # グラフ更新のループを「メインスレッド」で開始
+        # グラフ更新のループをメインスレッドで開始
         self.update_graph()
 
     def stop_observation(self):
@@ -250,16 +288,21 @@ class WeatherObservationApp:
         self.btn_stop.config(state=tk.DISABLED)
         self.entry_table.config(state=tk.NORMAL)
         self.btn_switch_table.config(state=tk.NORMAL)
-        self.entry_device.config(state=tk.NORMAL) # デバイス指定欄のロック解除
+        self.entry_device.config(state=tk.NORMAL)
+        self.combo_rate.config(state="readonly") # 周波数コンボボックスを解除
+        
+        # チャンネルチェックボックスの解除
+        self.cb_ch1.config(state=tk.NORMAL)
+        self.cb_ch2.config(state=tk.NORMAL)
+        self.cb_ch3.config(state=tk.NORMAL)
+        self.cb_ch4.config(state=tk.NORMAL)
         
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
         self.log_label.config(text="観測を停止しました。")
-        
-        # 【追加】デバイス表示を未接続に戻す
         self.device_label.config(text="デバイス: 未接続", foreground="darkorange")
 
     def observation_loop(self):
-        """1秒ごとにデータを集めてDBに保存するループ（裏側のスレッドで動作）"""
+        """1秒ごとにデータを集めてDBに保存するループ"""
         while self.is_observing:
             start_time, wind, hum, press = self.collect_one_second_data()
             self.save_to_db(start_time, wind, hum, press)
@@ -271,7 +314,7 @@ class WeatherObservationApp:
             self.latest_press = press
 
     def collect_one_second_data(self):
-        """1秒間（128回）の高速サンプリング"""
+        """1秒間指定された周波数分（サンプリングレート回）の高速サンプリング"""
         wind_list, hum_list, press_list = [], [], []
         start_time = pd.Timestamp.now()
         
@@ -280,13 +323,15 @@ class WeatherObservationApp:
             
             if self.device:
                 measurements = self.device.read()
+                # 選択状態によって配列インデックスが変わるのを防ぐため安全に取得
                 w = measurements[0] if len(measurements) > 0 else 0.0
                 h = measurements[1] if len(measurements) > 1 else 0.0
                 p = measurements[2] if len(measurements) > 2 else 0.0
             else:
-                w = 2.5 + random.uniform(-0.4, 0.4)
-                h = 55.0 + random.uniform(-1.0, 1.0)
-                p = 1013.2 + random.uniform(-0.1, 0.1)
+                # デモモード用の模擬データ
+                w = 2.5 + random.uniform(-0.4, 0.4) if self.ch1_var.get() else 0.0
+                h = 55.0 + random.uniform(-1.0, 1.0) if self.ch2_var.get() else 0.0
+                p = 1013.2 + random.uniform(-0.1, 0.1) if self.ch3_var.get() else 0.0
             
             wind_list.append(w)
             hum_list.append(h)
@@ -301,7 +346,10 @@ class WeatherObservationApp:
 
     def save_to_db(self, start_time, wind, humidity, pressure):
         """Pandasによる一括バルクインサート"""
-        timestamps = pd.date_range(start=start_time, periods=self.sampling_rate, freq='7.8125ms')
+        # 選択された周波数(サンプリングレート)に基づいて正確な時間軸を生成
+        freq_str = f"{self.interval * 1000:.4f}ms"
+        timestamps = pd.date_range(start=start_time, periods=self.sampling_rate, freq=freq_str)
+        
         df = pd.DataFrame({
             'sample_time': timestamps,
             'wind_speed': wind,
