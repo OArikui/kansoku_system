@@ -7,12 +7,18 @@ import sqlite3
 import pandas as pd
 import random
 import re
-
-# Matplotlib（グラフ描画用）のインポート
+import logging
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-# Vernier Go Direct センサー用ライブラリ
+# ログ設定: ファイルに保存
+logging.basicConfig(
+    filename='observation.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
+
 try:
     import gdx
     gdx_available = True
@@ -20,6 +26,94 @@ except ImportError:
     gdx_available = False
 
 class WeatherObservationApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("天体観測 気象データ収集システム")
+        self.root.geometry("850x800")
+        
+        self.db_path = tk.StringVar(value="solar_observation.db")
+        self.table_name = tk.StringVar(value="weather_samples")
+        self.device_setting = tk.StringVar(value="")
+        self.sampling_rate_var = tk.StringVar(value="128 Hz")
+        self.is_observing = False
+        self.device = None
+        self.ch_vars = {}
+        self.ch_info_map = {}
+        self.total_saved_count = 0
+        
+        # GUIと初期化の呼び出しを一本化
+        self._build_gui()
+        self.setup_initial_channels()
+        self._init_db()
+        
+        logging.info("--- システムが正常に起動しました ---")
+        self.log_event("システム起動完了")
+
+    def log_event(self, message):
+        """画面表示とログファイル記録を両立"""
+        logging.info(message)
+        self.log_label.config(text=message)
+
+    def browse_file(self):
+        filepath = filedialog.asksaveasfilename(defaultextension=".db", filetypes=[("SQLite Database", "*.db")])
+        if filepath:
+            self.db_path.set(filepath)
+            self.log_event(f"データベースファイルを読み込み/設定しました: {filepath}")
+
+    def connect_device(self):
+        """デバイス接続処理"""
+        if gdx_available:
+            try:
+                if self.device: self.device.close()
+                self.device = gdx.gdx()
+                target = self.device_setting.get().strip()
+                self.device.open(connection='usb', device_to_open=target if target else None)
+                
+                info_list = self.device.sensor_info()
+                self.device_label.config(text=f"デバイス接続済み: {target or 'Auto'}", foreground="green")
+                self.log_event(f"デバイスに接続しました: {target or 'Auto'}")
+                self.build_dynamic_checkboxes(info_list)
+            except Exception as e:
+                self.log_event(f"デバイス接続失敗: {e}")
+                messagebox.showerror("接続エラー", str(e))
+        else:
+            self.log_event("gdxライブラリ非対応のためデモモードで動作します")
+            self.setup_initial_channels()
+
+    def _init_db(self, target_table=None):
+        """テーブル作成・選択処理"""
+        table = target_table or self.table_name.get().strip()
+        conn = sqlite3.connect(self.db_path.get())
+        
+        selected_cols = []
+        for ch_num, var in self.ch_vars.items():
+            if var.get():
+                name = self.to_valid_column_name(self.ch_info_map[ch_num])
+                selected_cols.append(f"{name} REAL")
+        
+        if not selected_cols: selected_cols = ["ch_default REAL"]
+        
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {table} (sample_time TEXT PRIMARY KEY, {', '.join(selected_cols)})")
+        conn.close()
+        self.log_event(f"テーブル '{table}' を作成/選択しました。")
+
+    def switch_table(self):
+        """クイックテーブル切り替え処理"""
+        new_table = self.table_name.get().strip()
+        if not new_table:
+            messagebox.showwarning("警告", "テーブル名を入力してください。")
+            return
+        self._init_db(new_table)
+        self.total_saved_count = 0
+        self.counter_label.config(text=f"総保存件数: 0 件")
+
+
+
+
+
+
+
+
     def __init__(self, root):
         self.root = root
         self.root.title("天体観測 気象データ収集システム")
@@ -52,17 +146,6 @@ class WeatherObservationApp:
         self.setup_initial_channels()
         self._init_db()
 
-    # --- 【ここが不足していました】追加分 ---
-    def browse_file(self):
-        """データベースの保存場所を選択"""
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".db",
-            filetypes=[("SQLite Database", "*.db"), ("All Files", "*.*")],
-            title="データベースの保存先を選択"
-        )
-        if filepath:
-            self.db_path.set(filepath)
-    # ----------------------------------------
 
     def _build_gui(self):
         # (前回のUI構築コードと同じ内容です)
@@ -138,42 +221,6 @@ class WeatherObservationApp:
         ]
         self.build_dynamic_checkboxes(default_info)
 
-    def connect_device(self):
-        """【コア機能】実機デバイスに接続し、利用可能なチャンネルリストを動的に取得・展開する"""
-        if gdx_available:
-            try:
-                # 既存の接続があれば安全にクローズ
-                if self.device:
-                    try: self.device.close()
-                    except: pass
-                
-                self.device = gdx.gdx()
-                target_device = self.device_setting.get().strip()
-                
-                if target_device:
-                    self.device.open(connection='usb', device_to_open=target_device)
-                    disp_name = target_device
-                else:
-                    self.device.open(connection='usb')
-                    disp_name = "USB自動検出デバイス"
-                
-                # デバイスが持つ本物のチャンネル情報を取得
-                info_list = self.device.sensor_info() 
-                self.device_label.config(text=f"デバイス: {disp_name} (接続済)", foreground="green")
-                
-            except Exception as e:
-                messagebox.showwarning("接続エラー", f"デバイス通信に失敗しました。デモ用のチャンネル構成を展開します。\n詳細: {e}")
-                info_list = ["1 - Wind Speed (m/s)", "2 - Relative Humidity (%)", "3 - Barometric Pressure (hPa)", "4 - Temperature (°C)"]
-                self.device = None
-                self.device_label.config(text="デバイス: デモモード", foreground="darkorange")
-        else:
-            messagebox.showinfo("インフォ", "gdxライブラリがロードできないため、デモモードの選択肢を表示します。")
-            info_list = ["1 - Wind Speed (m/s)", "2 - Relative Humidity (%)", "3 - Barometric Pressure (hPa)", "4 - Temperature (°C)"]
-            self.device = None
-            self.device_label.config(text="デバイス: デモモード（gdx無）", foreground="darkorange")
-            
-        self.build_dynamic_checkboxes(info_list)
-
     def build_dynamic_checkboxes(self, info_list):
         """取得したチャンネル文字列リストからチェックボックス群を動的生成（2列マトリックス配置）"""
         for widget in self.ch_frame.winfo_children():
@@ -214,61 +261,16 @@ class WeatherObservationApp:
         else:
             return re.sub(r'[^a-zA-Z0-9_]', '_', text)
 
-    def _init_db(self, target_table=None):
-        """【進化】選択されているチャンネルに対応した動的なスキーマでSQLテーブルを構築"""
-        if target_table is None:
-            target_table = self.table_name.get().strip()
-            
-        if not target_table:
-            target_table = "weather_samples"
-            self.table_name.set(target_table)
-            
-        selected_cols = []
-        for ch_num, var in self.ch_vars.items():
-            if var.get():
-                info = self.ch_info_map[ch_num]
-                col_name = self.to_valid_column_name(info)
-                selected_cols.append(f"{col_name} REAL")
-                
-        if not selected_cols:
-            selected_cols = ["ch1_Default_Sensor REAL"]
 
-        columns_sql = ", ".join(selected_cols)
-
-        conn = sqlite3.connect(self.db_path.get())
-        cursor = conn.cursor()
-        cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {target_table} (
-                sample_time TEXT PRIMARY KEY,
-                {columns_sql}
-            )
-        """)
-        conn.commit()
-        conn.close()
-
-    def switch_table(self):
-        """クイックテーブル切り替え処理"""
-        if self.is_observing:
-            messagebox.showwarning("警告", "観測中はテーブルの変更ができません。")
-            return
-            
-        new_table = self.table_name.get().strip()
-        if not new_table:
-            messagebox.showwarning("警告", "テーブル名を入力してください。")
-            return
-            
-        try:
-            self._init_db(new_table)
-            self.total_saved_count = 0
-            self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
-            self.log_label.config(text=f"選択されたセンサー構成でテーブル '{new_table}' を準備しました。")
-        except Exception as e:
-            messagebox.showerror("エラー", f"テーブル切り替え失敗: {e}")
 
     def start_observation(self):
-        """観測の開始"""
-        if self.is_observing: return
-        
+        """観測開始処理"""
+        self.selected_channels = [ch for ch, var in self.ch_vars.items() if var.get()]
+        if not self.selected_channels:
+            messagebox.showwarning("警告", "チャネルを選択してください")
+            return
+
+        self.log_event(f"観測を開始しました。対象テーブル: {self.table_name.get()}")
         # 選択されたチャンネルを確定
         self.selected_channels = [ch for ch, var in self.ch_vars.items() if var.get()]
         if not self.selected_channels:
@@ -345,11 +347,9 @@ class WeatherObservationApp:
         self.update_graph()
 
     def stop_observation(self):
-        """観測の終了"""
+        """観測終了処理"""
         self.is_observing = False
-        if self.device:
-            try: self.device.stop()
-            except: pass
+        self.log_event("観測を終了しました。")
             
         # UIロックの解除
         self.btn_start.config(state=tk.NORMAL)
@@ -475,13 +475,9 @@ class WeatherObservationApp:
         self.root.after(1000, self.update_graph)
 
     def close_app(self):
-        """アプリケーションのクローズおよびデバイス解放処理"""
         self.stop_observation()
-        if self.device:
-            try: self.device.close()
-            except: pass
+        if self.device: self.device.close()
         self.root.destroy()
-
 
 if __name__ == "__main__":
     root = tk.Tk()
