@@ -22,11 +22,12 @@ class WeatherObservationApp:
     def __init__(self, root):
         self.root = root
         self.root.title("天体観測 気象データ収集システム (128Hzサンプリング)")
-        self.root.geometry("800x700")
+        self.root.geometry("800x720") # 高さをわずかに調整
         
         # --- システム変数 ---
         self.db_path = tk.StringVar(value="solar_observation.db")
-        self.table_name = tk.StringVar(value="weather_samples") # テーブル名を変数化
+        self.table_name = tk.StringVar(value="weather_samples")
+        self.device_setting = tk.StringVar(value="")  # 【追加】デバイスID指定用の変数
         self.channels = tk.StringVar(value="1, 2, 3")  # デフォルトのセンサーチャネル
         self.is_observing = False
         self.observation_thread = None
@@ -65,14 +66,20 @@ class WeatherObservationApp:
         self.btn_switch_table = ttk.Button(control_frame, text="切替 / 新規作成", command=self.switch_table)
         self.btn_switch_table.grid(row=1, column=2, sticky=tk.W)
         
-        # 1-3. センサーチャネルの選択
-        ttk.Label(control_frame, text="使用チャネル:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(control_frame, textvariable=self.channels, width=20).grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Label(control_frame, text="※例: 1, 2, 3 (風速,湿度,気圧)").grid(row=2, column=1, sticky=tk.E)
+        # 1-3. 【追加】観測デバイスの指定
+        ttk.Label(control_frame, text="接続デバイスID:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.entry_device = ttk.Entry(control_frame, textvariable=self.device_setting, width=30)
+        self.entry_device.grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Label(control_frame, text="※空欄でUSB自動検出 (例: GDX-ACC 01100123)").grid(row=2, column=2, sticky=tk.W)
         
-        # 1-4. 操作ボタン
+        # 1-4. センサーチャネルの選択
+        ttk.Label(control_frame, text="使用チャネル:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(control_frame, textvariable=self.channels, width=20).grid(row=3, column=1, sticky=tk.W, padx=5)
+        ttk.Label(control_frame, text="※例: 1, 2, 3 (風速,湿度,気圧)").grid(row=3, column=2, sticky=tk.W)
+        
+        # 1-5. 操作ボタン
         btn_frame = ttk.Frame(control_frame)
-        btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
+        btn_frame.grid(row=4, column=0, columnspan=3, pady=10)
         
         self.btn_start = ttk.Button(btn_frame, text="▶ 観測開始", command=self.start_observation, width=15)
         self.btn_start.pack(side=tk.LEFT, padx=10)
@@ -115,6 +122,10 @@ class WeatherObservationApp:
         self.counter_label = ttk.Label(status_frame, text=f"総保存件数: {self.total_saved_count} 件")
         self.counter_label.pack(side="right", padx=5)
 
+        # ④ 【追加】使用デバイス表示ラベル
+        self.device_label = ttk.Label(status_frame, text="デバイス: 未接続", foreground="darkorange", font=("", 9, "bold"))
+        self.device_label.pack(side="right", padx=15)
+
     def browse_file(self):
         """保存場所をダイアログで選択"""
         filepath = filedialog.asksaveasfilename(
@@ -137,7 +148,6 @@ class WeatherObservationApp:
 
         conn = sqlite3.connect(self.db_path.get())
         cursor = conn.cursor()
-        # 動的にテーブル名を指定して作成
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS {target_table} (
                 sample_time TEXT PRIMARY KEY,
@@ -160,10 +170,8 @@ class WeatherObservationApp:
             messagebox.showwarning("警告", "テーブル名を入力してください。")
             return
             
-        # データベースに新しいテーブルを作成（または既存を確認）
         try:
             self._init_db(new_table)
-            # カウンターをリセットしてUIに反映
             self.total_saved_count = 0
             self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
             self.log_label.config(text=f"保存先テーブルを '{new_table}' に切り替えました。")
@@ -174,32 +182,49 @@ class WeatherObservationApp:
         """観測の開始（別スレッドで裏側で動かす）"""
         if self.is_observing: return
         
-        # 開始直前に念のためテーブルを確認
         self._init_db()
+        disp_device_name = "未接続"
         
         # センサー初期化とチャネル選択
         if gdx_available:
             try:
                 ch_list = [int(c.strip()) for c in self.channels.get().split(',')]
                 self.device = gdx.gdx()
-                self.device.open(connection='usb')
+                
+                # 【修正】デバイス指定の判定
+                target_device = self.device_setting.get().strip()
+                if target_device:
+                    # デバイスIDが指定されている場合
+                    self.device.open(connection='usb', device_to_open=target_device)
+                    disp_device_name = target_device
+                else:
+                    # 空欄の場合は自動検出
+                    self.device.open(connection='usb')
+                    disp_device_name = "USB自動検出デバイス"
+                    
                 self.device.select_sensors(ch_list)
                 self.device.start(period=8)
             except Exception as e:
                 messagebox.showwarning("センサー警告", f"センサーの初期化に失敗しました。デモモード（模擬データ）で動作します。\n詳細: {e}")
                 self.device = None
+                disp_device_name = "デモモード（模擬データ）"
         else:
             self.device = None
+            disp_device_name = "デモモード（非サポート環境）"
             
-        # UIの表示切り替え（テーブル名変更をロック）
+        # UIの表示切り替え（各種設定をロック）
         self.is_observing = True
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.entry_table.config(state=tk.DISABLED)
         self.btn_switch_table.config(state=tk.DISABLED)
+        self.entry_device.config(state=tk.DISABLED) # デバイス指定欄をロック
         
         self.status_label.config(text="ステータス: 観測中 (128Hz)", foreground="red")
         self.log_label.config(text=f"テーブル '{self.table_name.get()}' に保存を開始しました...")
+        
+        # 【追加】ステータスバーに現在のデバイス名を表示
+        self.device_label.config(text=f"デバイス: {disp_device_name}", foreground="green")
         
         # 観測ループを「別スレッド」で開始
         self.observation_thread = threading.Thread(target=self.observation_loop, daemon=True)
@@ -225,9 +250,13 @@ class WeatherObservationApp:
         self.btn_stop.config(state=tk.DISABLED)
         self.entry_table.config(state=tk.NORMAL)
         self.btn_switch_table.config(state=tk.NORMAL)
+        self.entry_device.config(state=tk.NORMAL) # デバイス指定欄のロック解除
         
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
         self.log_label.config(text="観測を停止しました。")
+        
+        # 【追加】デバイス表示を未接続に戻す
+        self.device_label.config(text="デバイス: 未接続", foreground="darkorange")
 
     def observation_loop(self):
         """1秒ごとにデータを集めてDBに保存するループ（裏側のスレッドで動作）"""
@@ -255,7 +284,6 @@ class WeatherObservationApp:
                 h = measurements[1] if len(measurements) > 1 else 0.0
                 p = measurements[2] if len(measurements) > 2 else 0.0
             else:
-                # デモモード
                 w = 2.5 + random.uniform(-0.4, 0.4)
                 h = 55.0 + random.uniform(-1.0, 1.0)
                 p = 1013.2 + random.uniform(-0.1, 0.1)
@@ -282,21 +310,17 @@ class WeatherObservationApp:
         })
         df['sample_time'] = df['sample_time'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
         
-        # 動的に設定されたテーブル名に保存する
         current_table = self.table_name.get().strip()
         
         conn = sqlite3.connect(self.db_path.get())
         df.to_sql(current_table, con=conn, if_exists='append', index=False)
         conn.close()
 
-        # --- アクセスランプと件数カウンターの更新処理 ---
         self.total_saved_count += self.sampling_rate
-        
-        # UIの更新はメインスレッドで行う必要があるため after を使用
         self.root.after(0, self._update_status_bar)
 
     def _update_status_bar(self):
-        """ステータスバーの表示を更新（メインスレッドで実行される）"""
+        """ステータスバーの表示を更新"""
         self.lamp_canvas.itemconfig(self.lamp, fill="lime green")
         
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -306,7 +330,7 @@ class WeatherObservationApp:
         self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
 
     def update_graph(self):
-        """1秒おきにグラフを再描画する（表側のメインスレッドで動作）"""
+        """1秒おきにグラフを再描画する"""
         if not self.is_observing:
             return
             
