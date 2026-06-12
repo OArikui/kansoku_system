@@ -85,3 +85,109 @@
 2026-06-12 15:48:51,390 - INFO - --- システム終了処理開始 ---
 2026-06-12 15:48:51,409 - INFO - 観測を終了しました。
 2026-06-12 15:48:51,424 - INFO - --- システム正常終了 ---
+2026-06-12 15:51:47,097 - INFO - --- システム起動処理開始 ---
+2026-06-12 15:51:48,164 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:51:48,165 - INFO - --- システム正常起動 (Log: E:\projects\tenmon\kansoku_system\observation\observation.log) ---
+2026-06-12 15:51:48,165 - INFO - システム起動完了
+2026-06-12 15:51:51,480 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 15:51:51,483 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:51:51,486 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 15:52:02,294 - INFO - 観測を終了しました。
+2026-06-12 15:52:03,149 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 15:52:03,153 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:52:03,154 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 15:52:13,695 - INFO - 観測を終了しました。
+2026-06-12 15:52:14,174 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 15:52:14,178 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:52:14,180 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 15:52:17,382 - ERROR - データベース一括保存エラー: Execution failed
+Traceback (most recent call last):
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2571, in _execute_insert
+    conn.executemany(self.insert_statement(num_rows=1), data_list)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.IntegrityError: UNIQUE constraint failed: weather_samples.sample_time
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\projects\tenmon\kansoku_system\observation\get_enviroment.py", line 447, in save_to_db
+    df.to_sql(current_table, con=conn, if_exists='append', index=False)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\core\generic.py", line 3052, in to_sql
+    return sql.to_sql(
+           ~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<8 lines>...
+        method=method,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 841, in to_sql
+    return pandas_sql.to_sql(
+           ~~~~~~~~~~~~~~~~~^
+        frame,
+        ^^^^^^
+    ...<9 lines>...
+        **engine_kwargs,
+        ^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2880, in to_sql
+    return table.insert(chunksize, method)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 1122, in insert
+    num_inserted = exec_insert(conn, keys, chunk_iter)
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2573, in _execute_insert
+    raise DatabaseError("Execution failed") from exc
+pandas.errors.DatabaseError: Execution failed
+2026-06-12 15:52:21,833 - ERROR - データベース一括保存エラー: Execution failed
+Traceback (most recent call last):
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2571, in _execute_insert
+    conn.executemany(self.insert_statement(num_rows=1), data_list)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.IntegrityError: UNIQUE constraint failed: weather_samples.sample_time
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\projects\tenmon\kansoku_system\observation\get_enviroment.py", line 447, in save_to_db
+    df.to_sql(current_table, con=conn, if_exists='append', index=False)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\core\generic.py", line 3052, in to_sql
+    return sql.to_sql(
+           ~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<8 lines>...
+        method=method,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 841, in to_sql
+    return pandas_sql.to_sql(
+           ~~~~~~~~~~~~~~~~~^
+        frame,
+        ^^^^^^
+    ...<9 lines>...
+        **engine_kwargs,
+        ^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2880, in to_sql
+    return table.insert(chunksize, method)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 1122, in insert
+    num_inserted = exec_insert(conn, keys, chunk_iter)
+  File "E:\App\Python\Python313\Lib\site-packages\pandas\io\sql.py", line 2573, in _execute_insert
+    raise DatabaseError("Execution failed") from exc
+pandas.errors.DatabaseError: Execution failed
+2026-06-12 15:52:24,426 - INFO - 観測を終了しました。
+2026-06-12 15:52:28,433 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 15:52:28,437 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:52:28,440 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 15:52:34,403 - INFO - 観測を終了しました。
+2026-06-12 15:52:35,093 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 15:52:35,096 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 15:52:35,098 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 15:52:44,070 - INFO - 観測を終了しました。

@@ -71,6 +71,9 @@ class WeatherObservationApp:
         self.latest_buffers = {}
         self.total_saved_count = 0
         
+        # 【機能追加】1秒カウンタ管理用の内部変数
+        self.graph_update_ticks = 0
+        
         # GUI構築と初期化（重複を排除し一本化）
         self._build_gui()
         self.setup_initial_channels()
@@ -204,6 +207,11 @@ class WeatherObservationApp:
 
         self.graph_label_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ", padding=5)
         self.graph_label_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # 【機能追加】表示データ更新までの1秒カウンタバーの配置
+        self.progress_bar = ttk.Progressbar(self.graph_label_frame, orient='horizontal', mode='determinate', maximum=100)
+        self.progress_bar.pack(fill=tk.X, padx=10, pady=5)
+
         self.fig = Figure(figsize=(8, 4.5), dpi=100)
         self.ax1 = self.fig.add_subplot(311)
         self.ax2 = self.fig.add_subplot(312)
@@ -276,6 +284,10 @@ class WeatherObservationApp:
             messagebox.showwarning("警告", "少なくとも1つのチャネルにチェックを入れてください。")
             return
 
+        # 【機能追加】観測開始時に選択されているチャネルの情報を取得してログファイルに記録
+        selected_ch_info = [self.ch_info_map[ch] for ch in self.selected_channels]
+        logging.info(f"観測開始 - 選択されたチャネル一覧: {', '.join(selected_ch_info)}")
+
         try:
             self.sampling_rate = int(self.sampling_rate_var.get().split()[0])
             self.interval = 1.0 / self.sampling_rate
@@ -317,6 +329,9 @@ class WeatherObservationApp:
             self.device_label.config(text="デバイス: デモモード", foreground="darkorange")
             
         self.is_observing = True
+        self.graph_update_ticks = 0 # 内部カウンタをリセット
+        self.progress_bar['value'] = 0
+        
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.entry_table.config(state=tk.DISABLED)
@@ -358,6 +373,8 @@ class WeatherObservationApp:
         
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
         self.log_label.config(text="観測を停止しました。")
+        self.progress_bar['value'] = 0 # カウンタバーをリセット
+        
         if self.device:
             self.device_label.config(text="デバイス: 接続維持 (待機中)", foreground="green")
         else:
@@ -444,32 +461,43 @@ class WeatherObservationApp:
         self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
 
     def update_graph(self):
+        """【機能変更】100ms周期でカウンタを進め、10回に1回(1秒ごと)にグラフをマッピング"""
         if not self.is_observing:
+            self.progress_bar['value'] = 0
             return
             
-        if self.latest_buffers and any(self.latest_buffers.values()):
-            self.ax1.clear()
-            self.ax2.clear()
-            self.ax3.clear()
+        # 100msごとに呼ばれるため、毎回10%ずつ進める（10回=1000ms=1秒で満タン）
+        self.graph_update_ticks += 1
+        self.progress_bar['value'] = self.graph_update_ticks * 10
+        
+        # 10回（1秒）に達した瞬間に蓄積データをグラフへプロット
+        if self.graph_update_ticks >= 10:
+            self.graph_update_ticks = 0 # カウンタをリセット
             
-            axes = [self.ax1, self.ax2, self.ax3]
-            colors = ['blue', 'green', 'red']
-            
-            for idx, ch in enumerate(self.selected_channels[:3]):
-                ax = axes[idx]
-                y_data = self.latest_buffers.get(ch, [])
-                title_text = self.ch_info_map.get(ch, f"Channel {ch}")
+            if self.latest_buffers and any(self.latest_buffers.values()):
+                self.ax1.clear()
+                self.ax2.clear()
+                self.ax3.clear()
                 
-                if y_data:
-                    ax.plot(self.latest_time, y_data, color=colors[idx], linewidth=1)
-                    ax.set_title(title_text, fontsize=10, pad=3)
-            
-            for idx in range(len(self.selected_channels[:3]), 3):
-                axes[idx].text(0.5, 0.5, "- 未選択スロット -", ha='center', va='center', color='gray')
+                axes = [self.ax1, self.ax2, self.ax3]
+                colors = ['blue', 'green', 'red']
                 
-            self.canvas.draw()
+                for idx, ch in enumerate(self.selected_channels[:3]):
+                    ax = axes[idx]
+                    y_data = self.latest_buffers.get(ch, [])
+                    title_text = self.ch_info_map.get(ch, f"Channel {ch}")
+                    
+                    if y_data:
+                        ax.plot(self.latest_time, y_data, color=colors[idx], linewidth=1)
+                        ax.set_title(title_text, fontsize=10, pad=3)
+                
+                for idx in range(len(self.selected_channels[:3]), 3):
+                    axes[idx].text(0.5, 0.5, "- 未選択スロット -", ha='center', va='center', color='gray')
+                    
+                self.canvas.draw()
             
-        self.root.after(1000, self.update_graph)
+        # 100ms（0.1秒）後にこの関数を再帰呼び出し
+        self.root.after(100, self.update_graph)
 
     def close_app(self):
         logging.info("--- システム終了処理開始 ---")
