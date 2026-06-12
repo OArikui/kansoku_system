@@ -191,3 +191,23 @@ pandas.errors.DatabaseError: Execution failed
 2026-06-12 15:52:35,096 - INFO - テーブル 'weather_samples' を初期化/確認しました。
 2026-06-12 15:52:35,098 - INFO - 観測を開始しました。対象テーブル: weather_samples
 2026-06-12 15:52:44,070 - INFO - 観測を終了しました。
+2026-06-12 15:59:28,224 - INFO - --- システム終了処理開始 ---
+2026-06-12 15:59:28,275 - INFO - 観測を終了しました。
+2026-06-12 15:59:28,292 - INFO - --- システム正常終了 ---
+2026-06-12 15:59:59,244 - INFO - --- システム起動処理開始 ---
+2026-06-12 16:00:00,747 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 16:00:00,748 - INFO - --- システム正常起動 (Log: E:\projects\tenmon\kansoku_system\observation\observation.log) ---
+2026-06-12 16:00:00,748 - INFO - システム起動完了
+2026-06-12 16:00:08,610 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 16:00:09,494 - INFO - gdxライブラリ非対応のためデモモードで動作します
+2026-06-12 16:00:17,224 - INFO - データベースファイルを指定しました: E:/projects/tenmon/kansoku_system/observation/xxx.db
+2026-06-12 16:00:17,790 - INFO - gdxライブラリ非対応のためデモモードで動作します
+2026-06-12 16:00:18,417 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 16:00:22,455 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 16:00:22,765 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 16:00:22,811 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 16:00:27,947 - INFO - 観測を終了しました。
+2026-06-12 16:00:29,136 - INFO - 観測開始 - 選択されたチャネル一覧: 1 - Wind Speed (m/s), 2 - Relative Humidity (%), 3 - Barometric Pressure (hPa)
+2026-06-12 16:00:29,140 - INFO - テーブル 'weather_samples' を初期化/確認しました。
+2026-06-12 16:00:29,143 - INFO - 観測を開始しました。対象テーブル: weather_samples
+2026-06-12 16:00:32,264 - INFO - 観測を終了しました。

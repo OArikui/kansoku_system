@@ -50,7 +50,7 @@ class WeatherObservationApp:
         self.root.geometry("850x800")
         
         # --- システム変数 ---
-        self.db_path = tk.StringVar(value=DEFAULT_DB_PATH) # 初期値を絶対パスに変更
+        self.db_path = tk.StringVar(value=DEFAULT_DB_PATH) 
         self.table_name = tk.StringVar(value="weather_samples")
         self.device_setting = tk.StringVar(value="")
         self.sampling_rate_var = tk.StringVar(value="128 Hz")
@@ -71,10 +71,12 @@ class WeatherObservationApp:
         self.latest_buffers = {}
         self.total_saved_count = 0
         
-        # 【機能追加】1秒カウンタ管理用の内部変数
+        # 1秒カウンタ管理用の内部変数
         self.graph_update_ticks = 0
+        # 【エラー対策】セッション内のタイムスタンプ一貫性を保つための基準時刻変数
+        self.current_obs_time = None
         
-        # GUI構築と初期化（重複を排除し一本化）
+        # GUI構築と初期化
         self._build_gui()
         self.setup_initial_channels()
         self._init_db()
@@ -88,7 +90,6 @@ class WeatherObservationApp:
         self.log_label.config(text=message)
 
     def browse_file(self):
-        # ダイアログの初期ディレクトリをスクリプトのフォルダにする
         filepath = filedialog.asksaveasfilename(
             initialdir=BASE_DIR,
             defaultextension=".db", 
@@ -208,7 +209,7 @@ class WeatherObservationApp:
         self.graph_label_frame = ttk.LabelFrame(self.root, text="リアルタイム観測データ", padding=5)
         self.graph_label_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # 【機能追加】表示データ更新までの1秒カウンタバーの配置
+        # 表示データ更新までの1秒カウンタバーの配置
         self.progress_bar = ttk.Progressbar(self.graph_label_frame, orient='horizontal', mode='determinate', maximum=100)
         self.progress_bar.pack(fill=tk.X, padx=10, pady=5)
 
@@ -284,7 +285,6 @@ class WeatherObservationApp:
             messagebox.showwarning("警告", "少なくとも1つのチャネルにチェックを入れてください。")
             return
 
-        # 【機能追加】観測開始時に選択されているチャネルの情報を取得してログファイルに記録
         selected_ch_info = [self.ch_info_map[ch] for ch in self.selected_channels]
         logging.info(f"観測開始 - 選択されたチャネル一覧: {', '.join(selected_ch_info)}")
 
@@ -329,8 +329,11 @@ class WeatherObservationApp:
             self.device_label.config(text="デバイス: デモモード", foreground="darkorange")
             
         self.is_observing = True
-        self.graph_update_ticks = 0 # 内部カウンタをリセット
+        self.graph_update_ticks = 0 
         self.progress_bar['value'] = 0
+        
+        # 【エラー対策】観測開始時の現在時刻をセッション全体の絶対的な基準時刻として保持
+        self.current_obs_time = pd.Timestamp.now()
         
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
@@ -373,7 +376,7 @@ class WeatherObservationApp:
         
         self.status_label.config(text="ステータス: 待機中", foreground="blue")
         self.log_label.config(text="観測を停止しました。")
-        self.progress_bar['value'] = 0 # カウンタバーをリセット
+        self.progress_bar['value'] = 0 
         
         if self.device:
             self.device_label.config(text="デバイス: 接続維持 (待機中)", foreground="green")
@@ -384,10 +387,11 @@ class WeatherObservationApp:
         """バックグラウンドの高速サンプリングループ"""
         while self.is_observing:
             try:
-                start_time, data_dict = self.collect_one_second_data()
+                # 【エラー対策】タイムスタンプ決定権を save_to_db に一任するため引数を変更
+                data_dict = self.collect_one_second_data()
                 if not self.is_observing: 
                     break
-                self.save_to_db(start_time, data_dict)
+                self.save_to_db(data_dict)
                 
                 self.latest_time = list(range(self.sampling_rate))
                 self.latest_buffers = data_dict
@@ -397,7 +401,7 @@ class WeatherObservationApp:
 
     def collect_one_second_data(self):
         data_dict = {ch: [] for ch in self.selected_channels}
-        start_time = pd.Timestamp.now()
+        # 【エラー対策】ループ内での重複の原因となる現在時刻の再取得を削除
         
         for _ in range(self.sampling_rate):
             t_start = time.perf_counter()
@@ -423,14 +427,14 @@ class WeatherObservationApp:
             if t_sleep > 0:
                 time.sleep(t_sleep)
                 
-        return start_time, data_dict
+        return data_dict
 
-    def save_to_db(self, start_time, data_dict):
-        """タイムスタンプのエラーを回避した安全な一括保存"""
+    def save_to_db(self, data_dict):
+        """タイムスタンプの重複を100%回避する連続型一括保存"""
         try:
-            # 128Hzなどの小数ミリ秒によるPandasパースエラーを回避するタイムスタンプ生成
+            # 【エラー対策】観測開始時からの連続した確定タイムスタンプ系列を数理的に生成
             offsets = np.arange(self.sampling_rate) * self.interval
-            timestamps = start_time + pd.to_timedelta(offsets, unit='s')
+            timestamps = self.current_obs_time + pd.to_timedelta(offsets, unit='s')
             
             df_data = {'sample_time': timestamps}
             for ch in self.selected_channels:
@@ -447,10 +451,12 @@ class WeatherObservationApp:
             df.to_sql(current_table, con=conn, if_exists='append', index=False)
             conn.close()
 
+            # 【エラー対策】次の1秒データのために、基準タイムスタンプを「正確にサンプリング時間分」だけ前進させる
+            self.current_obs_time += pd.to_timedelta(self.sampling_rate * self.interval, unit='s')
+
             self.total_saved_count += self.sampling_rate
             self.root.after(0, self._update_status_bar)
         except Exception as e:
-            # 万が一DBエラーが起きてもスレッドを殺さずログに残す
             logging.error(f"データベース一括保存エラー: {e}", exc_info=True)
 
     def _update_status_bar(self):
@@ -461,18 +467,15 @@ class WeatherObservationApp:
         self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
 
     def update_graph(self):
-        """【機能変更】100ms周期でカウンタを進め、10回に1回(1秒ごと)にグラフをマッピング"""
         if not self.is_observing:
             self.progress_bar['value'] = 0
             return
             
-        # 100msごとに呼ばれるため、毎回10%ずつ進める（10回=1000ms=1秒で満タン）
         self.graph_update_ticks += 1
         self.progress_bar['value'] = self.graph_update_ticks * 10
         
-        # 10回（1秒）に達した瞬間に蓄積データをグラフへプロット
         if self.graph_update_ticks >= 10:
-            self.graph_update_ticks = 0 # カウンタをリセット
+            self.graph_update_ticks = 0 
             
             if self.latest_buffers and any(self.latest_buffers.values()):
                 self.ax1.clear()
@@ -496,7 +499,6 @@ class WeatherObservationApp:
                     
                 self.canvas.draw()
             
-        # 100ms（0.1秒）後にこの関数を再帰呼び出し
         self.root.after(100, self.update_graph)
 
     def close_app(self):
