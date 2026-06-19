@@ -76,6 +76,9 @@ class WeatherObservationApp:
         # 【エラー対策】セッション内のタイムスタンプ一貫性を保つための基準時刻変数
         self.current_obs_time = None
         
+        # 【高速化】生成されたラインオブジェクトを保持する辞書
+        self.lines = {}
+        
         # GUI構築と初期化
         self._build_gui()
         self.setup_initial_channels()
@@ -352,6 +355,37 @@ class WeatherObservationApp:
         self.log_event(f"観測を開始しました。対象テーブル: {self.table_name.get()}")
         
         self.latest_buffers = {ch: [] for ch in self.selected_channels}
+
+        # -----------------------------------------------------------------
+        # 💡【改善ポイント1】観測開始時に「土台（軸・枠・タイトル）」を1度だけ作る
+        # -----------------------------------------------------------------
+        self.ax1.clear()
+        self.ax2.clear()
+        self.ax3.clear()
+        self.lines.clear()
+        
+        axes = [self.ax1, self.ax2, self.ax3]
+        colors = ['blue', 'green', 'red']
+        self.latest_time = list(range(self.sampling_rate))
+        dummy_y = [0.0] * self.sampling_rate  # 初回用ダミーデータ
+        
+        for idx, ax in enumerate(axes):
+            if idx < len(self.selected_channels[:3]):
+                ch = self.selected_channels[idx]
+                title_text = self.ch_info_map.get(ch, f"Channel {ch}")
+                ax.set_title(title_text, fontsize=10, pad=3)
+                ax.set_xlim(0, self.sampling_rate - 1)
+                
+                # 最初の一度だけ空プロットを作り、その「ラインオブジェクト」への参照を保持する
+                line, = ax.plot(self.latest_time, dummy_y, color=colors[idx], linewidth=1)
+                self.lines[ch] = line
+            else:
+                ax.text(0.5, 0.5, "- 未選択スロット -", ha='center', va='center', color='gray')
+                ax.set_axis_off()
+                
+        self.fig.tight_layout(pad=2.5)
+        self.canvas.draw()  # 最初の枠組みだけを完全レンダリング
+        # -----------------------------------------------------------------
         
         self.observation_thread = threading.Thread(target=self.observation_loop, daemon=True)
         self.observation_thread.start()
@@ -387,7 +421,6 @@ class WeatherObservationApp:
         """バックグラウンドの高速サンプリングループ"""
         while self.is_observing:
             try:
-                # 【エラー対策】タイムスタンプ決定権を save_to_db に一任するため引数を変更
                 data_dict = self.collect_one_second_data()
                 if not self.is_observing: 
                     break
@@ -401,7 +434,6 @@ class WeatherObservationApp:
 
     def collect_one_second_data(self):
         data_dict = {ch: [] for ch in self.selected_channels}
-        # 【エラー対策】ループ内での重複の原因となる現在時刻の再取得を削除
         
         for _ in range(self.sampling_rate):
             t_start = time.perf_counter()
@@ -432,7 +464,6 @@ class WeatherObservationApp:
     def save_to_db(self, data_dict):
         """タイムスタンプの重複を100%回避する連続型一括保存"""
         try:
-            # 【エラー対策】観測開始時からの連続した確定タイムスタンプ系列を数理的に生成
             offsets = np.arange(self.sampling_rate) * self.interval
             timestamps = self.current_obs_time + pd.to_timedelta(offsets, unit='s')
             
@@ -451,9 +482,7 @@ class WeatherObservationApp:
             df.to_sql(current_table, con=conn, if_exists='append', index=False)
             conn.close()
 
-            # 【エラー対策】次の1秒データのために、基準タイムスタンプを「正確にサンプリング時間分」だけ前進させる
             self.current_obs_time += pd.to_timedelta(self.sampling_rate * self.interval, unit='s')
-
             self.total_saved_count += self.sampling_rate
             self.root.after(0, self._update_status_bar)
         except Exception as e:
@@ -466,6 +495,9 @@ class WeatherObservationApp:
         self.counter_label.config(text=f"総保存件数: {self.total_saved_count} 件")
         self.root.after(150, lambda: self.lamp_canvas.itemconfig(self.lamp, fill="gray"))
 
+    # -----------------------------------------------------------------
+    # 💡【改善ポイント2】ax.clear() を一切使わずデータ（Y値）の配列だけを上書き
+    # -----------------------------------------------------------------
     def update_graph(self):
         if not self.is_observing:
             self.progress_bar['value'] = 0
@@ -478,28 +510,24 @@ class WeatherObservationApp:
             self.graph_update_ticks = 0 
             
             if self.latest_buffers and any(self.latest_buffers.values()):
-                self.ax1.clear()
-                self.ax2.clear()
-                self.ax3.clear()
-                
                 axes = [self.ax1, self.ax2, self.ax3]
-                colors = ['blue', 'green', 'red']
                 
                 for idx, ch in enumerate(self.selected_channels[:3]):
-                    ax = axes[idx]
                     y_data = self.latest_buffers.get(ch, [])
-                    title_text = self.ch_info_map.get(ch, f"Channel {ch}")
-                    
-                    if y_data:
-                        ax.plot(self.latest_time, y_data, color=colors[idx], linewidth=1)
-                        ax.set_title(title_text, fontsize=10, pad=3)
+                    if y_data and ch in self.lines:
+                        # 枠やタイトルは壊さず、中身のデータ（配列）だけを直接書き換える
+                        self.lines[ch].set_ydata(y_data)
+                        
+                        # Y軸の上下限のみ、新しいデータに合わせて自動フィット（X軸は0~127で固定）
+                        ax = axes[idx]
+                        ax.relim()
+                        ax.autoscale_view(scalex=False, scaley=True)
                 
-                for idx in range(len(self.selected_channels[:3]), 3):
-                    axes[idx].text(0.5, 0.5, "- 未選択スロット -", ha='center', va='center', color='gray')
-                    
-                self.canvas.draw()
+                # スレッドを停止させる draw() をやめ、描画イベントを効率的に処理する draw_idle() へ変更
+                self.canvas.draw_idle()
             
         self.root.after(100, self.update_graph)
+    # -----------------------------------------------------------------
 
     def close_app(self):
         logging.info("--- システム終了処理開始 ---")
