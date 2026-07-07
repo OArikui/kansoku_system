@@ -21,9 +21,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # 相対インポートを絶対インポート（lib.〜）に変更
-from observation.lib.MIN2_ver1 import MIN2_ignore_sunspots as MIN2
-from observation.lib.RANSAC import calculate_west_angle_robust as west_angle
-from observation.lib.open_circle_arrow import OpenCircleArrow
+from lib.MIN2_ver1 import MIN2_ignore_sunspots as MIN2
+from lib.RANSAC import calculate_west_angle_robust as west_angle
+from lib.open_circle_arrow import OpenCircleArrow
 
 # zwoasiのインポート（警告抑制のため環境変数を先にセット）
 env_filename = project_root / "lib" / "ASICamera2.dll"
