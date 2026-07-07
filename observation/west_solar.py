@@ -11,15 +11,19 @@ import numpy as np
 # 0. 階層エラー対策 (パスの自動追加)
 # ==========================================
 # スクリプトの場所から見て、2階層上の「kansoku_system」を検索パスに追加
+# --- 修正案 ---
 current_dir = Path(__file__).resolve().parent
-project_root = current_dir.parent  # kansoku_system ディレクトリ
+if hasattr(sys, '_MEIPASS'):
+    project_root = Path(sys._MEIPASS) # exe化した時はここを見る
+else:
+    project_root = current_dir # 通常実行時は main フォルダ自体をルートにする
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # 相対インポートを絶対インポート（lib.〜）に変更
-from lib.MIN2_ver1 import MIN2_ignore_sunspots as MIN2
-from lib.RANSAC import calculate_west_angle_robust as west_angle
-from lib.open_circle_arrow import OpenCircleArrow
+from observation.lib.MIN2_ver1 import MIN2_ignore_sunspots as MIN2
+from observation.lib.RANSAC import calculate_west_angle_robust as west_angle
+from observation.lib.open_circle_arrow import OpenCircleArrow
 
 # zwoasiのインポート（警告抑制のため環境変数を先にセット）
 env_filename = project_root / "lib" / "ASICamera2.dll"
