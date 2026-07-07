@@ -1,0 +1,17 @@
+PS C:\projects\kansoku_system> C:\projects\kansoku_system\observation\dist\west_solar\west_solar.exe
+WARNING:root:ASI SDK library not found
+カメラが接続されていません。
+PS C:\projects\kansoku_system> C:\projects\kansoku_system\observation\dist\west_solar\west_solar.exe
+WARNING:root:ASI SDK library not found
+接続されたカメラ: ZWO ASI432MM
+loading...
+complete loading
+リアルタイム処理を開始します。'q' キーで終了するか、グラフウィンドウを閉じてください。
+カメラを安全に切断しました。
+Traceback (most recent call last):
+  File "west_solar.py", line 130, in <module>
+  File "lib\MIN2_ver1.py", line 116, in MIN2_ignore_sunspots
+    x=spots[i][0]
+      ~~~~~^^^
+IndexError: list index out of range
+[PYI-25304:ERROR] Failed to execute script 'west_solar' due to unhandled exception!
