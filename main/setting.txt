@@ -1,7 +1,0 @@
-pic_path=
-database_path=
-verniers_path=
-camstat_colums=
-other_colums=
-pic_extension=tiff
-min2_options=

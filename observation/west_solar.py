@@ -11,8 +11,12 @@ import numpy as np
 # 0. 階層エラー対策 (パスの自動追加)
 # ==========================================
 # スクリプトの場所から見て、2階層上の「kansoku_system」を検索パスに追加
+# --- 修正案 ---
 current_dir = Path(__file__).resolve().parent
-project_root = current_dir.parent  # kansoku_system ディレクトリ
+if hasattr(sys, '_MEIPASS'):
+    project_root = Path(sys._MEIPASS) # exe化した時はここを見る
+else:
+    project_root = current_dir # 通常実行時は main フォルダ自体をルートにする
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
